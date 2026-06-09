@@ -8,8 +8,10 @@ import importlib
 from pathlib import Path
 from setuptools.command.build_py import build_py
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+import torch
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
+_IS_ROCM = torch.version.hip is not None
 persistent_env_names = ('EP_JIT_CACHE_DIR', 'EP_JIT_PRINT_COMPILER_COMMAND', 'EP_NUM_TOPK_IDX_BITS', 'EP_NCCL_ROOT_DIR')
 
 # Load discover module without triggering `deep_ep.__init__`
@@ -167,6 +169,19 @@ if __name__ == '__main__':
             print(f'   > {k}: {v}')
     print()
 
+    ext_modules = []
+    cmdclass = {'build_py': CustomBuildPy}
+    if not _IS_ROCM:
+        ext_modules.append(
+            CUDAExtension(name='deep_ep._C',
+                          include_dirs=include_dirs,
+                          library_dirs=library_dirs,
+                          sources=sources,
+                          extra_compile_args=extra_compile_args,
+                          extra_link_args=extra_link_args)
+        )
+        cmdclass['build_ext'] = BuildExtension
+
     setuptools.setup(
         name='deep_ep',
         version=get_package_version(),
@@ -176,16 +191,6 @@ if __name__ == '__main__':
                 'include/deep_ep/**/*',
             ]
         },
-        ext_modules=[
-            CUDAExtension(name='deep_ep._C',
-                          include_dirs=include_dirs,
-                          library_dirs=library_dirs,
-                          sources=sources,
-                          extra_compile_args=extra_compile_args,
-                          extra_link_args=extra_link_args)
-        ],
-        cmdclass={
-            'build_ext': BuildExtension,
-            'build_py': CustomBuildPy
-        }
+        ext_modules=ext_modules,
+        cmdclass=cmdclass
     )
