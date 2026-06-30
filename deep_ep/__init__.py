@@ -79,19 +79,30 @@ def init_jit():
                 find_cuda_home(),   # CUDA home
                 find_nccl_root())   # NCCL root
 
-# Run initialization
-check_nccl_so()
-init_jit()
+# On AMD/ROCm the upstream C++ extension (deep_ep._C) cannot build — it
+# requires NVSHMEM + NCCL GIN device communicator APIs + Hopper PTX/TMA,
+# none of which exist on AMD.  Skip the CUDA-only initialization and expose
+# the AMD SDMA-bypass dispatch path (RCCL fallback, issue
+# amdpilot-org/DeepEP#3) instead.  The NVIDIA path is unchanged.
+is_rocm = getattr(torch.version, "hip", None) is not None
 
+if is_rocm:
+    # AMD/ROCm: self-contained RCCL fallback dispatch (no C++ extension).
+    from .amd import DispatchBuffer, SDMAHandle, is_sdma_available, topk_idx_t
+else:
+    # NVIDIA: full CUDA extension initialization (unchanged).
+    # Run initialization
+    check_nccl_so()
+    init_jit()
 
-# Import APIs after initialization
-from .buffers.legacy import Buffer
-from .buffers.elastic import ElasticBuffer, EPHandle
-# noinspection PyUnresolvedReferences
-from .utils.event import EventOverlap, EventHandle
-from .utils.envs import get_physical_domain_size, get_logical_domain_size
+    # Import APIs after initialization
+    from .buffers.legacy import Buffer
+    from .buffers.elastic import ElasticBuffer, EPHandle
+    # noinspection PyUnresolvedReferences
+    from .utils.event import EventOverlap, EventHandle
+    from .utils.envs import get_physical_domain_size, get_logical_domain_size
 
-# noinspection PyUnresolvedReferences
-from deep_ep._C import Config, topk_idx_t
+    # noinspection PyUnresolvedReferences
+    from deep_ep._C import Config, topk_idx_t
 
 __version__ = '2.0.0'
